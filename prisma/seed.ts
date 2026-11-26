@@ -18,11 +18,15 @@ async function main() {
       email: process.env.SEED_ADMIN_EMAIL,
       password: process.env.SEED_ADMIN_PASSWORD,
     });
-    console.log(
-      admin.created
-        ? `Primeiro administrador criado: ${admin.email} (troca de senha obrigatória no primeiro acesso).`
-        : "Já existe administrador ativo.",
-    );
+    if (admin.created) {
+      console.log(`Primeiro administrador criado: ${admin.email} (troca de senha obrigatória no primeiro acesso).`);
+    } else if (admin.reason === "missing_env") {
+      console.warn(
+        "ATENÇÃO: ainda não há administrador. Defina SEED_ADMIN_NAME, SEED_ADMIN_EMAIL e SEED_ADMIN_PASSWORD e rode o deploy de novo.",
+      );
+    } else {
+      console.log("Já existe administrador ativo.");
+    }
   } finally {
     await db.$disconnect();
   }
