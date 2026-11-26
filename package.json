@@ -58,6 +58,7 @@
     "@prisma/driver-adapter-utils": "7.10.1",
     "@prisma/schema-engine-wasm": "8.1.0-1.d1b3f377ca835d73fd50954a5e22128b9ebdd6b8",
     "@tailwindcss/turbopack": "4.3.3",
+    "@tailwindcss/vite": "4.3.3",
     "@types/node": "^20",
     "@types/pg": "^8.23.1",
     "@types/react": "^19",

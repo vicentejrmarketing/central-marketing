@@ -15,6 +15,12 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Tailwind CSS v4 no build do Next.js (Turbopack). Sem isso o CSS sai sem as classes utilitárias.
+  turbopack: {
+    rules: {
+      "*.css": { loaders: ["@tailwindcss/turbopack"], as: "*.css" },
+    },
+  },
   experimental: {
     serverActions: { bodySizeLimit: "6mb" },
   },

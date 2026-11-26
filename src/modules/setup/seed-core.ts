@@ -5,7 +5,7 @@
  */
 import type { PrismaClient } from "@/generated/prisma/client";
 import { INITIAL_SECTORS, PERMISSIONS, SYSTEM_ROLE_DEFS, SYSTEM_ROLES, type SystemRoleKey } from "@/lib/authz/catalog";
-import { hashPassword, passwordPolicyError } from "@/lib/auth/password";
+import { hashPassword } from "@/lib/auth/password";
 
 export async function syncConfiguration(db: PrismaClient) {
   // 1. Catálogo de permissões (cria, atualiza textos e remove chaves que saíram do código).
@@ -59,8 +59,9 @@ export async function ensureFirstAdmin(db: PrismaClient, input: { name?: string;
   // Sem os dados do primeiro administrador, o seed não cria nada (e não derruba o build);
   // basta definir SEED_ADMIN_* e rodar o seed/deploy de novo.
   if (!input.email || !input.password || !input.name) return { created: false as const, reason: "missing_env" as const };
-  const policy = passwordPolicyError(input.password, input.email);
-  if (policy) throw new Error(`SEED_ADMIN_PASSWORD: ${policy}`);
+  // A senha do seed é provisória: o primeiro acesso obriga a troca, e a nova senha passa pela
+  // política completa (passwordPolicyError). Aqui só se exige o mínimo de 8 caracteres.
+  if (input.password.length < 8) throw new Error("SEED_ADMIN_PASSWORD: use pelo menos 8 caracteres.");
   const sector =
     (await db.sector.findFirst({ where: { name: "Gestão de Marketing" } })) ?? (await db.sector.findFirst({ where: { active: true } }));
   const user = await db.user.create({

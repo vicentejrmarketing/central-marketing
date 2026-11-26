@@ -18,7 +18,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-card/95 px-3 backdrop-blur sm:px-6">
           <MobileNav groups={nav} />
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <GlobalSearch />
           </div>
           <NotificationBell initialUnread={unread} />
