@@ -1,0 +1,5 @@
+src/generated
+pnpm-lock.yaml
+prisma/migrations
+prisma/schema-snapshots
+.next

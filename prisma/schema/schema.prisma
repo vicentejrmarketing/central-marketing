@@ -1,0 +1,24 @@
+// Central de Gestão do Marketing — configuração do gerador e do banco.
+// O esquema está dividido por domínio nos arquivos *.prisma desta pasta.
+
+generator client {
+  provider        = "prisma-client"
+  output          = "../../src/generated/prisma"
+  moduleFormat    = "esm"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+// Cliente para o Cloudflare Workers: carrega o compilador de consultas (WebAssembly)
+// por import estático, exigido pelo runtime workerd. O vite.config.ts usa este cliente no build do Workers.
+generator workers {
+  provider        = "prisma-client"
+  output          = "../../src/generated/prisma-workers"
+  moduleFormat    = "esm"
+  runtime         = "workerd"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  extensions = [citext, pg_trgm, unaccent]
+}

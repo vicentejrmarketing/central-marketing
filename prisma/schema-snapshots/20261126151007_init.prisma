@@ -1,0 +1,318 @@
+// ---- identity.prisma ----
+// Identidade, acesso e permissões.
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum AuthTokenType {
+  INVITE
+  PASSWORD_RESET
+}
+
+/// Escopo de uma permissão: OWN (próprios), SECTOR (setor), STORES (lojas vinculadas), ALL (todos).
+enum PermissionScope {
+  OWN
+  SECTOR
+  STORES
+  ALL
+}
+
+enum OverrideEffect {
+  GRANT
+  DENY
+}
+
+model User {
+  id                 String     @id @default(uuid(7)) @db.Uuid
+  name               String
+  email              String     @unique @db.Citext
+  passwordHash       String?
+  mustChangePassword Boolean    @default(false)
+  avatarKey          String?
+  jobTitle           String?
+  phone              String?
+  status             UserStatus @default(ACTIVE)
+  sectorId           String?    @db.Uuid
+  roleId             String     @db.Uuid
+  lastLoginAt        DateTime?  @db.Timestamptz(3)
+  deactivatedAt      DateTime?  @db.Timestamptz(3)
+  createdAt          DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime   @updatedAt @db.Timestamptz(3)
+  version            Int        @default(1)
+
+  sector Sector? @relation("SectorMembers", fields: [sectorId], references: [id], onDelete: Restrict)
+  role   Role    @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  sessions          Session[]
+  authTokens        AuthToken[]              @relation("AuthTokenUser")
+  authTokensCreated AuthToken[]              @relation("AuthTokenCreatedBy")
+  overrides         UserPermissionOverride[] @relation("OverrideUser")
+  overridesGranted  UserPermissionOverride[] @relation("OverrideGrantedBy")
+  ledSectors        Sector[]                 @relation("SectorLeader")
+  regionLinks       RegionManager[]          @relation("RegionManagerUser")
+  regionLinksMade   RegionManager[]          @relation("RegionManagerAssignedBy")
+  regionLinksEnded  RegionManager[]          @relation("RegionManagerEndedBy")
+  storesResponsible Store[]                  @relation("StoreResponsible")
+  storeImports      StoreImport[]
+  auditLogs         AuditLog[]
+  notifications     Notification[]
+
+  @@index([roleId])
+  @@index([sectorId])
+  @@index([status])
+}
+
+model Session {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tokenHash  String   @unique
+  userId     String   @db.Uuid
+  expiresAt  DateTime @db.Timestamptz(3)
+  lastSeenAt DateTime @default(now()) @db.Timestamptz(3)
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// Convites e redefinições de senha. Uso único; só o hash do token é guardado.
+model AuthToken {
+  id          String        @id @default(uuid(7)) @db.Uuid
+  tokenHash   String        @unique
+  type        AuthTokenType
+  userId      String        @db.Uuid
+  expiresAt   DateTime      @db.Timestamptz(3)
+  usedAt      DateTime?     @db.Timestamptz(3)
+  createdById String?       @db.Uuid
+  createdAt   DateTime      @default(now()) @db.Timestamptz(3)
+
+  user      User  @relation("AuthTokenUser", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy User? @relation("AuthTokenCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([userId, type])
+}
+
+/// Tentativas de login, usadas no limite contra força bruta.
+model LoginAttempt {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  email     String   @db.Citext
+  ip        String
+  success   Boolean
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([email, ip, createdAt])
+  @@index([createdAt])
+}
+
+model Sector {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  name        String    @unique
+  description String?
+  color       String    @default("#64748b")
+  leaderId    String?   @db.Uuid
+  active      Boolean   @default(true)
+  archivedAt  DateTime? @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+  version     Int       @default(1)
+
+  leader  User?  @relation("SectorLeader", fields: [leaderId], references: [id], onDelete: Restrict)
+  members User[] @relation("SectorMembers")
+}
+
+model Role {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  key         String   @unique
+  name        String   @unique
+  description String?
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  users       User[]
+  permissions RolePermission[]
+}
+
+/// Catálogo de permissões. Definido em código (src/lib/authz/catalog.ts) e sincronizado pelo seed.
+model Permission {
+  key         String  @id
+  module      String
+  label       String
+  description String
+  scoped      Boolean @default(true)
+
+  roles     RolePermission[]
+  overrides UserPermissionOverride[]
+}
+
+model RolePermission {
+  roleId        String          @db.Uuid
+  permissionKey String
+  scope         PermissionScope @default(ALL)
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionKey], references: [key], onDelete: Cascade)
+
+  @@id([roleId, permissionKey])
+}
+
+model UserPermissionOverride {
+  id            String          @id @default(uuid(7)) @db.Uuid
+  userId        String          @db.Uuid
+  permissionKey String
+  effect        OverrideEffect
+  scope         PermissionScope @default(ALL)
+  reason        String?
+  grantedById   String          @db.Uuid
+  createdAt     DateTime        @default(now()) @db.Timestamptz(3)
+
+  user       User       @relation("OverrideUser", fields: [userId], references: [id], onDelete: Cascade)
+  grantedBy  User       @relation("OverrideGrantedBy", fields: [grantedById], references: [id], onDelete: Restrict)
+  permission Permission @relation(fields: [permissionKey], references: [key], onDelete: Cascade)
+
+  @@unique([userId, permissionKey])
+}
+
+// ---- platform.prisma ----
+// Plataforma: auditoria e notificações.
+
+/// Trilha de auditoria. Somente inserção: um trigger (na migração) recusa UPDATE e DELETE.
+model AuditLog {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  actorId    String?  @db.Uuid
+  action     String
+  entityType String
+  entityId   String?
+  summary    String
+  before     Json?
+  after      Json?
+  ip         String?
+  userAgent  String?
+  requestId  String?
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([entityType, entityId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([createdAt])
+}
+
+model Notification {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  userId     String    @db.Uuid
+  type       String
+  title      String
+  body       String?
+  link       String?
+  entityType String?
+  entityId   String?
+  dedupeKey  String?   @unique
+  readAt     DateTime? @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+}
+
+// ---- schema.prisma ----
+// Central de Gestão do Marketing — configuração do gerador e do banco.
+// O esquema está dividido por domínio nos arquivos *.prisma desta pasta.
+
+generator client {
+  provider        = "prisma-client"
+  output          = "../../src/generated/prisma"
+  moduleFormat    = "esm"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  extensions = [citext, pg_trgm, unaccent]
+}
+
+// ---- stores.prisma ----
+// Lojas, regiões e vínculo de gerentes regionais.
+
+enum StoreStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Region {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  name        String    @unique
+  description String?
+  active      Boolean   @default(true)
+  archivedAt  DateTime? @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+  version     Int       @default(1)
+
+  stores   Store[]
+  managers RegionManager[]
+}
+
+/// Vínculo de um gerente regional a uma região. Vínculos encerrados (endsAt preenchido) são mantidos como histórico.
+/// Um índice único parcial (na migração) impede dois vínculos vigentes do mesmo usuário com a mesma região.
+model RegionManager {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  regionId     String    @db.Uuid
+  userId       String    @db.Uuid
+  startsAt     DateTime  @default(now()) @db.Timestamptz(3)
+  endsAt       DateTime? @db.Timestamptz(3)
+  assignedById String    @db.Uuid
+  endedById    String?   @db.Uuid
+
+  region     Region @relation(fields: [regionId], references: [id], onDelete: Restrict)
+  user       User   @relation("RegionManagerUser", fields: [userId], references: [id], onDelete: Restrict)
+  assignedBy User   @relation("RegionManagerAssignedBy", fields: [assignedById], references: [id], onDelete: Restrict)
+  endedBy    User?  @relation("RegionManagerEndedBy", fields: [endedById], references: [id], onDelete: Restrict)
+
+  @@index([userId, endsAt])
+  @@index([regionId, endsAt])
+}
+
+model Store {
+  id                String      @id @default(uuid(7)) @db.Uuid
+  code              String      @unique @db.Citext
+  name              String
+  city              String
+  state             String      @db.Char(2)
+  address           String?
+  phone             String?
+  regionId          String      @db.Uuid
+  responsibleUserId String?     @db.Uuid
+  managerName       String?
+  managerPhone      String?
+  status            StoreStatus @default(ACTIVE)
+  createdAt         DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime    @updatedAt @db.Timestamptz(3)
+  version           Int         @default(1)
+
+  region      Region @relation(fields: [regionId], references: [id], onDelete: Restrict)
+  responsible User?  @relation("StoreResponsible", fields: [responsibleUserId], references: [id], onDelete: Restrict)
+
+  @@index([regionId])
+  @@index([status])
+}
+
+model StoreImport {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  fileName       String
+  totalRows      Int
+  createdCount   Int
+  updatedCount   Int
+  regionsCreated Int      @default(0)
+  errors         Json     @default("[]")
+  importedById   String   @db.Uuid
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+
+  importedBy User @relation(fields: [importedById], references: [id], onDelete: Restrict)
+}

@@ -1,0 +1,78 @@
+// Lojas, regiões e vínculo de gerentes regionais.
+
+enum StoreStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Region {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  name        String    @unique
+  description String?
+  active      Boolean   @default(true)
+  archivedAt  DateTime? @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+  version     Int       @default(1)
+
+  stores   Store[]
+  managers RegionManager[]
+}
+
+/// Vínculo de um gerente regional a uma região. Vínculos encerrados (endsAt preenchido) são mantidos como histórico.
+/// Um índice único parcial (na migração) impede dois vínculos vigentes do mesmo usuário com a mesma região.
+model RegionManager {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  regionId     String    @db.Uuid
+  userId       String    @db.Uuid
+  startsAt     DateTime  @default(now()) @db.Timestamptz(3)
+  endsAt       DateTime? @db.Timestamptz(3)
+  assignedById String    @db.Uuid
+  endedById    String?   @db.Uuid
+
+  region     Region @relation(fields: [regionId], references: [id], onDelete: Restrict)
+  user       User   @relation("RegionManagerUser", fields: [userId], references: [id], onDelete: Restrict)
+  assignedBy User   @relation("RegionManagerAssignedBy", fields: [assignedById], references: [id], onDelete: Restrict)
+  endedBy    User?  @relation("RegionManagerEndedBy", fields: [endedById], references: [id], onDelete: Restrict)
+
+  @@index([userId, endsAt])
+  @@index([regionId, endsAt])
+}
+
+model Store {
+  id                String      @id @default(uuid(7)) @db.Uuid
+  code              String      @unique @db.Citext
+  name              String
+  city              String
+  state             String      @db.Char(2)
+  address           String?
+  phone             String?
+  regionId          String      @db.Uuid
+  responsibleUserId String?     @db.Uuid
+  managerName       String?
+  managerPhone      String?
+  status            StoreStatus @default(ACTIVE)
+  createdAt         DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime    @updatedAt @db.Timestamptz(3)
+  version           Int         @default(1)
+
+  region      Region @relation(fields: [regionId], references: [id], onDelete: Restrict)
+  responsible User?  @relation("StoreResponsible", fields: [responsibleUserId], references: [id], onDelete: Restrict)
+
+  @@index([regionId])
+  @@index([status])
+}
+
+model StoreImport {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  fileName       String
+  totalRows      Int
+  createdCount   Int
+  updatedCount   Int
+  regionsCreated Int      @default(0)
+  errors         Json     @default("[]")
+  importedById   String   @db.Uuid
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+
+  importedBy User @relation(fields: [importedById], references: [id], onDelete: Restrict)
+}
