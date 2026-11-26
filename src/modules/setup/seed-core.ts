@@ -55,10 +55,10 @@ export async function syncConfiguration(db: PrismaClient) {
 export async function ensureFirstAdmin(db: PrismaClient, input: { name?: string; email?: string; password?: string }) {
   const admin = await db.role.findUniqueOrThrow({ where: { key: SYSTEM_ROLES.ADMIN } });
   const active = await db.user.count({ where: { roleId: admin.id, status: "ACTIVE" } });
-  if (active > 0) return { created: false as const };
-  if (!input.email || !input.password || !input.name) {
-    throw new Error("Defina SEED_ADMIN_NAME, SEED_ADMIN_EMAIL e SEED_ADMIN_PASSWORD para criar o primeiro administrador.");
-  }
+  if (active > 0) return { created: false as const, reason: "exists" as const };
+  // Sem os dados do primeiro administrador, o seed não cria nada (e não derruba o build);
+  // basta definir SEED_ADMIN_* e rodar o seed/deploy de novo.
+  if (!input.email || !input.password || !input.name) return { created: false as const, reason: "missing_env" as const };
   const policy = passwordPolicyError(input.password, input.email);
   if (policy) throw new Error(`SEED_ADMIN_PASSWORD: ${policy}`);
   const sector =
